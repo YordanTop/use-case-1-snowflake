@@ -1,0 +1,137 @@
+CREATE DATABASE TOUCAN_ECOMERSE_DB;
+
+USE TOUCAN_ECOMERSE_DB;
+
+ Създаване на Stage за запазване на данните от файла ecommerce_orders
+
+CREATE STAGE TOUCAN_ECOMERSE_DB.PUBLIC.Order_Files;
+
+ Създаване на tb_orders_record таблицата и задаване на нейните параметри.
+
+CREATE TABLE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+AS
+SELECT $1 AS Order_id,
+       $2 AS Custorm_id,
+       $3 AS Custorm_name,
+       $4 AS Order_date,
+       $5 AS Product,
+       $6 AS Quantity,
+       $7 AS Price,
+       $8 AS Discount,
+       $9 AS Total_amount,
+       $10 AS Payment_method,
+       $11 AS Shipping_address,
+       $12 AS Status
+FROM @TOUCAN_ECOMERSE_DB.PUBLIC.ORDER_FILESecommerce_orders.csv
+
+Select  from tb_orders_record;
+
+Load-ване на всичики данни чрез командата copy в таблица tb_orders_record
+
+COPY INTO TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+FROM(
+SELECT $1 AS Order_id,
+       $2 AS Custorm_id,
+       $3 AS Custorm_name,
+       $4 AS Order_date,
+       $5 AS Product,
+       $6 AS Quantity,
+       $7 AS Price,
+       $8 AS Discount,
+       $9 AS Total_amount,
+       $10 AS Payment_method,
+       $11 AS Shipping_address,
+       $12 AS Status
+FROM @TOUCAN_ECOMERSE_DB.PUBLIC.ORDER_FILESecommerce_orders.csv)
+
+FILE_FORMAT = (
+    TYPE = CSV, SKIP_HEADER = 1
+)
+
+FORCE = TRUE;
+
+Select  from tb_orders_record;
+
+
+
+ Създаване на таблица за запазване на предадени поръчки за ревю td_for_review
+
+CREATE SCHEMA TOUCAN_ECOMERSE_DB.Review_data_schema;
+
+CREATE TABLE TOUCAN_ECOMERSE_DB.Review_data_schema.td_for_review
+AS
+SELECT $1 AS Order_id,
+       $2 AS Custorm_id,
+       $3 AS Custorm_name,
+       $4 AS Order_date,
+       $5 AS Product,
+       $6 AS Quantity,
+       $7 AS Price,
+       $8 AS Discount,
+       $9 AS Total_amount,
+       $10 AS Payment_method,
+       $11 AS Shipping_address,
+       $12 AS Status
+       FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+       WHERE Shipping_address IS null AND Status = 'Delivered'
+
+       
+SELECT  FROM td_for_review
+
+Създаване на място за некоректни данне
+CREATE SCHEMA Incorrect_data_log;
+
+
+Създаване на таблица за хора с липсващи данни
+
+CREATE TABLE TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.tb_invalid_user_data
+AS
+SELECT $1 AS Order_id,
+       $2 AS Custorm_id,
+       $3 AS Custorm_name,
+       $4 AS Order_date,
+       $5 AS Product,
+       $6 AS Quantity,
+       $7 AS Price,
+       $8 AS Discount,
+       $9 AS Total_amount,
+       $10 AS Payment_method,
+       $11 AS Shipping_address,
+       $12 AS Status
+       FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+       WHERE Custorm_id IS null OR Custorm_name IS null
+
+SELECT  FROM TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.tb_invalid_user_data;
+
+Aктуализиране за всеки ред от колоната Payment_method в tb_orders_record който няма резултат с Unknown стойност
+
+UPDATE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+SET Payment_method = 'Unknown'
+WHERE Payment_method IS null;
+
+ Създаване на таблица за складиране наневалидни формати.
+CREATE TABLE TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.td_invalid_date_format(
+
+    Order_id int,
+    Custorm_id int,
+    Custorm_name text,
+    Order_date date,
+    Product text,
+    Quantity int,
+    Price decimal,
+    Discount double,
+    Total_Amount decimal,
+    Payment_Method text,
+    Shipping_Address text,
+    Status text
+);
+
+Изтриване на отрицателни или нулеви стойности за количество и цена
+
+DELETE FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+WHERE Quantity = 0.0 OR Quantity IS null
+
+DELETE FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+WHERE Price = 0 OR Price IS null
+
+
