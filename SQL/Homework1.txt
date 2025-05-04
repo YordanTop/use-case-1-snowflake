@@ -2,11 +2,11 @@ CREATE DATABASE TOUCAN_ECOMERSE_DB;
 
 USE TOUCAN_ECOMERSE_DB;
 
- Създаване на Stage за запазване на данните от файла ecommerce_orders
+// Създаване на Stage за запазване на данните от файла ecommerce_orders
 
 CREATE STAGE TOUCAN_ECOMERSE_DB.PUBLIC.Order_Files;
 
- Създаване на tb_orders_record таблицата и задаване на нейните параметри.
+// Създаване на tb_orders_record таблицата и задаване на нейните параметри.
 
 CREATE TABLE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
 AS
@@ -22,11 +22,11 @@ SELECT $1 AS Order_id,
        $10 AS Payment_method,
        $11 AS Shipping_address,
        $12 AS Status
-FROM @TOUCAN_ECOMERSE_DB.PUBLIC.ORDER_FILESecommerce_orders.csv
+FROM @TOUCAN_ECOMERSE_DB.PUBLIC.ORDER_FILES/ecommerce_orders.csv
 
-Select  from tb_orders_record;
+Select * from tb_orders_record;
 
-Load-ване на всичики данни чрез командата copy в таблица tb_orders_record
+//Load-ване на всичики данни чрез командата copy в таблица tb_orders_record
 
 COPY INTO TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
 FROM(
@@ -42,7 +42,7 @@ SELECT $1 AS Order_id,
        $10 AS Payment_method,
        $11 AS Shipping_address,
        $12 AS Status
-FROM @TOUCAN_ECOMERSE_DB.PUBLIC.ORDER_FILESecommerce_orders.csv)
+FROM @TOUCAN_ECOMERSE_DB.PUBLIC.ORDER_FILES/ecommerce_orders.csv)
 
 FILE_FORMAT = (
     TYPE = CSV, SKIP_HEADER = 1
@@ -50,11 +50,11 @@ FILE_FORMAT = (
 
 FORCE = TRUE;
 
-Select  from tb_orders_record;
+Select * from tb_orders_record;
 
 
 
- Създаване на таблица за запазване на предадени поръчки за ревю td_for_review
+// Създаване на таблица за запазване на предадени поръчки за ревю td_for_review
 
 CREATE SCHEMA TOUCAN_ECOMERSE_DB.Review_data_schema;
 
@@ -76,13 +76,13 @@ SELECT $1 AS Order_id,
        WHERE Shipping_address IS null AND Status = 'Delivered'
 
        
-SELECT  FROM td_for_review
+SELECT * FROM td_for_review
 
-Създаване на място за некоректни данне
+//Създаване на място за некоректни данне
 CREATE SCHEMA Incorrect_data_log;
 
 
-Създаване на таблица за хора с липсващи данни
+//Създаване на таблица за хора с липсващи данни
 
 CREATE TABLE TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.tb_invalid_user_data
 AS
@@ -101,15 +101,15 @@ SELECT $1 AS Order_id,
        FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
        WHERE Custorm_id IS null OR Custorm_name IS null
 
-SELECT  FROM TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.tb_invalid_user_data;
+SELECT * FROM TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.tb_invalid_user_data;
 
-Aктуализиране за всеки ред от колоната Payment_method в tb_orders_record който няма резултат с Unknown стойност
+//Aктуализиране за всеки ред от колоната Payment_method в tb_orders_record който няма резултат с Unknown стойност
 
 UPDATE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
 SET Payment_method = 'Unknown'
 WHERE Payment_method IS null;
 
- Създаване на таблица за складиране наневалидни формати.
+// Създаване на таблица за складиране наневалидни формати.
 CREATE TABLE TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.td_invalid_date_format(
 
     Order_id int,
@@ -126,12 +126,71 @@ CREATE TABLE TOUCAN_ECOMERSE_DB.INCORRECT_DATA_LOG.td_invalid_date_format(
     Status text
 );
 
-Изтриване на отрицателни или нулеви стойности за количество и цена
+//Изтриване на отрицателни или нулеви стойности за количество и цена
 
 DELETE FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
-WHERE Quantity = 0.0 OR Quantity IS null
+WHERE TRY_TO_DOUBLE(Quantity) <= 0.0 OR TRY_TO_DOUBLE(Quantity) IS null;
 
 DELETE FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
-WHERE Price = 0 OR Price IS null
+WHERE TRY_TO_DOUBLE(Price) <= 0 OR TRY_TO_DOUBLE(Price) IS null;
+
+
+// Коригиране на невалидните стъпки
+
+UPDATE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+SET DISCOUNT = 0
+WHERE TRY_TO_DOUBLE(DISCOUNT) <= 0.0;
+
+UPDATE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+SET DISCOUNT = 0.5
+WHERE TRY_TO_DOUBLE(DISCOUNT) > 0.5;
+
+//Преизчисляване на цените
+
+UPDATE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+SET TOTAL_AMOUNT = (PRICE - (PRICE * TRY_TO_DOUBLE(DISCOUNT))) * QUANTITY
+WHERE TRY_TO_DOUBLE(TOTAL_AMOUNT) = (PRICE - (PRICE * TRY_TO_DOUBLE(DISCOUNT))) * QUANTITY;
+
+// Изчистване на грешен статус
+
+UPDATE TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+SET STATUS = 'Pending'
+WHERE Shipping_address IS null AND Status = 'Delivered';
+
+
+//Създаване на място за вече изчистената информация
+
+CREATE SCHEMA TOUCAN_ECOMERSE_DB.CLEAN_DATA_LOG
+
+CREATE TABLE TOUCAN_ECOMERSE_DB.CLEAN_DATA_LOG.td_clean_records
+AS
+SELECT $1 AS Order_id,
+       $2 AS Custorm_id,
+       $3 AS Custorm_name,
+       $4 AS Order_date,
+       $5 AS Product,
+       $6 AS Quantity,
+       $7 AS Price,
+       $8 AS Discount,
+       $9 AS Total_amount,
+       $10 AS Payment_method,
+       $11 AS Shipping_address,
+       $12 AS Status
+       FROM TOUCAN_ECOMERSE_DB.PUBLIC.tb_orders_record
+       QUALIFY ROW_NUMBER() OVER (PARTITION BY ORDER_ID ORDER BY ORDER_ID) = 1;
+
+
+//Вече изчистените данни които не се повтарят
+Select COUNT(order_id) from TOUCAN_ECOMERSE_DB.CLEAN_DATA_LOG.td_clean_records;
+
+//Данните които се потарят
+Select COUNT(order_id) from tb_orders_record;
+
+
+
+
+
+
+
 
 
