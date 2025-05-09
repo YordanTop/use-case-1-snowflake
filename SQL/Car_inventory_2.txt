@@ -1,0 +1,83 @@
+// Създаване на базата данни
+
+CREATE DATABASE TOUCAN_CARS_INVENTORY_DATABASE;
+
+
+//1. Направете STAGE, който да оперира със съдържанието на CSV файловете
+
+CREATE STAGE TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.CAR_INV_STAGE;
+
+//2. Копирайте файла colors.csv в ТЕМПОРАЛНА таблица
+
+CREATE TEMP TABLE TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.COLORS
+AS
+SELECT
+    $1 AS id,
+    $2 AS name,
+    $3 AS rgb,
+    $4 AS is_trans,
+FROM @TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.CAR_INV_STAGE/colors.csv;
+
+
+
+COPY INTO TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.COLORS
+FROM(
+SELECT
+    $1 AS id,
+    $2 AS name,
+    $3 AS rgb,
+    $4 AS is_trans,
+FROM @TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.CAR_INV_STAGE/colors.csv)
+
+FILE_FORMAT = (
+    TYPE = CSV, SKIP_HEADER = 1
+)
+
+FORCE = TRUE;
+
+//3. Създайте нова таблица, която да съдържа само и единствено стойностите на колоните които са дефинирани като is_trans t. Новата таблица не трябва да съдържа колонката is_trans.
+
+//Създавена на схема за филтриране на цветовете на които колоната is_trans = true
+CREATE SCHEMA TOUCAN_CARS_INVENTORY_DATABASE.TRANSPARENT_COLOR_SCHEMA;
+
+CREATE TABLE TOUCAN_CARS_INVENTORY_DATABASE.TRANSPARENT_COLOR_SCHEMA.TransColor
+AS
+SELECT
+    $1 AS id,
+    $2 AS name,
+    $3 AS rgb,
+FROM TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.COLORS
+WHERE is_trans = 't';
+
+
+//4. 4. Създайте таблица, td_top_themes_this_month - която да съдържа две колонки theme и count. В един единствен запис добавете бройката на срещания на Star Wars от файла themes.csv
+
+CREATE TABLE TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.Theme
+AS
+SELECT
+    $1 AS id,
+    $2 AS name,
+    $3 AS parent_id
+FROM @TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.CAR_INV_STAGE/themes.csv;
+
+
+
+CREATE OR REPLACE TABLE TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.td_top_themes_this_month 
+(
+    theme VARCHAR(20),
+    count INT
+)
+
+
+INSERT INTO TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.td_top_themes_this_month (theme,count)
+SELECT 
+    $1 AS THEME,
+    $2 AS COUNT(name)
+FROM TOUCAN_CARS_INVENTORY_DATABASE.PUBLIC.Theme
+WHERE name = 'Star Wars'
+
+
+
+
+
+
